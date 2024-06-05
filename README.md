@@ -8,12 +8,13 @@
 Before using `aoe2PM`, ensure Python is installed along with the necessary dependencies:
 - `mgz`
 - `pandas`
+- `pm4py`
 - `sqlite3`
 
 You can install these packages via pip:
 ```bash
 
-pip install mgz pandas pm4py sqlite3
+pip install mgz pandas pm4py
 ```
 
 
@@ -37,7 +38,7 @@ Extracts essential match data from a list of `.aoe2record` files and exporting i
   The maximum number of matches to process. Default is a very large number (`10000000000`), effectively meaning all matches in `match_ids` will be processed unless a different goal is set.
 
 - **`db_path` (str, optional)**: 
-  The path to the output SQLite database file where the OCEL data will be stored. Default is `'./out/aoe_data_ocel.sqlite'`.
+  The path to the output SQLite database file where the OCEL 2.0 data will be stored. Default is `'./out/aoe_data_ocel.sqlite'`.
 
 - **`masterdata_path` (str, optional)**: 
   The path to the directory containing master data files required for processing, such as `building_actions.json` and `base_build_times.json`. Default is `'./masterdata/'`.

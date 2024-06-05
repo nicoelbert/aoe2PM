@@ -55,7 +55,7 @@ To use the `exportOCEL_fromRecordfile` function from the `aoe2PM` module, follow
 5. Pass the list of match IDs to the `exportOCEL_fromRecordfile` function with the desired parameters.
 6. The `.sql` file will be exported to the specified database path.
 
-### Example use code is available in `demo_notebook.ipynb`.
+### Example code is available in `demo_notebook.ipynb`. Example data can be found in `./data`.
 
 ```python
 from aoe2PM import aoeOCEL

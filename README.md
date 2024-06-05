@@ -1,4 +1,4 @@
-# aoe2PM - Age of Empires II Process Mining
+# aoe2PM - Age of Empires II Object Centric Process Mining
 
 ## Overview
 `aoe2PM` is a Python package dedicated to facilitating object centric process mining in the context of real-time strategy (RTS) games, specifically Age of Empires II. The package is designed to convert `.aoe2record` files, which contain game replay data, into OCEL2.0-standard event logs that can be used for process mining analyses. This enables detailed examination of player strategies and interactions within the game environment.

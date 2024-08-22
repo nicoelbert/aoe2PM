@@ -1,0 +1,8 @@
+{
+    "Build Town Center": ["Gather Wood","Gather Wood","Gather Wood","Gather Stone","Gather Gold"],
+    "Build Mill": ["Gather Food"],
+    "Build Mining Camp": ["Gather Gold","Gather Stone"],
+    "Build Lumber Camp": ["Gather Food"],
+    "Build Farm": ["Gather Food"],
+    "Reseed Farm": ["Gather Food"]
+}

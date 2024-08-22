@@ -59,6 +59,14 @@ def extract_recordfile_data(filepath):
     else:
         match_info['winner'] = int(2)
 
+    match_info['winner_ids'] = []
+
+    for player in match.players:
+        if player.winner == True:
+            match_info['winner_ids'].append(player.profile_id)
+            
+
+
     ##read initial objects for each player
     for player in match.players:
         init_objects[player.profile_id] = {}

@@ -9,7 +9,8 @@ from itertools import combinations
 import os
 import sqlite3
 import datetime
-import json
+import random
+import bisect
 
 
 class Event:
@@ -143,8 +144,6 @@ class OCEL_event:
         }
 
         if attributes_dict:
-
-
             self.attributes.update(attributes_dict)
 
     def __str__(self):
@@ -181,7 +180,7 @@ class OCEL_object:
 
 
 
-def exportOCEL_fromRecordfile(match_ids:list, recordfile_path = './data/recordfiles/', goal = 10000000000, db_path = './out/aoe_data_ocel.sqlite', masterdata_path = './masterdata/'):
+def exportOCEL_fromRecordfile(match_ids:list, recordfile_path = './data/recordfiles/', goal = 10000000000, db_path = './out/aoe_data_ocel.sqlite', masterdata_path = '.data/masterdata'):
     """ Export OCEL Data from Recordfiles using MatchIds and recordfile path. Number of matches to be processed succesfully can be limited by goal parameter.
     """
 
@@ -190,6 +189,15 @@ def exportOCEL_fromRecordfile(match_ids:list, recordfile_path = './data/recordfi
     ##Open Masterdata
     with open(masterdata_path + '/building_actions.json') as f:
         building_actions = json.load(f)
+
+    with open(masterdata_path + '/base_build_times.json') as f:
+        base_build_times = json.load(f)
+
+    with open(masterdata_path + '/build_gather_map.json') as f:
+        gather_actions = json.load(f)#
+
+    with open(masterdata_path + '/gather_map.json') as f:
+        gather_map = json.load(f)#
 
     event_duration_seconds = {}
 
@@ -204,8 +212,7 @@ def exportOCEL_fromRecordfile(match_ids:list, recordfile_path = './data/recordfi
         for key in dict:
             build_action_mapping[key] = build
 
-    with open(masterdata_path + '/base_build_times.json') as f:
-        base_build_times = json.load(f)
+
         
     build_times = {}
 
@@ -316,15 +323,24 @@ def exportOCEL_fromRecordfile(match_ids:list, recordfile_path = './data/recordfi
 
                 #create End Event 
                 event_type = "Complete " + event["activity"]
-                event_time = event["timestamp"] + timedelta(seconds=build_time)
+                event_time = event["timestamp"] + timedelta(seconds=build_time)                
 
                 #remove player attribute for end event
                 attributes_dict['Player'] = []
 
                 end_event = OCEL_event(event_type, event_time,p_id, attributes_dict=attributes_dict)
-
-
                 OCEL_event_match += [start_event, end_event]
+
+
+                #create subsequent gather event after build
+                if event["activity"] in gather_actions:
+                    event_type = random.choice(gather_actions[event["activity"]])
+                    event_type = event_type
+                    gather_event = OCEL_event(event_type, event_time,p_id, attributes_dict=attributes_dict)
+                    OCEL_event_match.append(gather_event)
+
+
+
                 OCEL_event_creation.append(start_event   )
 
         return OCEL_event_match, OCEL_event_creation
@@ -556,6 +572,7 @@ def exportOCEL_fromRecordfile(match_ids:list, recordfile_path = './data/recordfi
 
         for event_object in global_events:
             event = event_object.get_dict()
+
 
             #add buildings
             if "Queue" in event['activity']:
@@ -872,12 +889,104 @@ def exportOCEL_fromRecordfile(match_ids:list, recordfile_path = './data/recordfi
         for obj in OCEL_obj_match:
             ocel_obj_actid[obj.act_id] = obj
 
+        ######## Create all Gather Events with accesible obj_actid
+        
+        gatherpoint_dict = {}
+
+
+        #create Gather and Gather point Events
+        for event in global_events:
+
+            #identify gather and gather point events and map them to the correct resource
+            if "Gather" in event.activity:
+                #Filter Out None Gather Points or Building Gather Points
+                if event.activity_subtype == None or event.activity_subtype == "None" or event.activity_subtype in base_build_times:
+                    gather_target = "None"
+                else:
+                    try:
+                        #aggregate subcategories for robustness
+                        if "Tree" in event.activity_subtype:
+                            event.activity_subtype = "Tree"
+                        if "Fish" in event.activity_subtype:
+                            event.activity_subtype = "Fish"
+                        if "Bush" in event.activity_subtype:
+                            event.activity_subtype = "Bush"
+    
+                        gather_target = gather_map[event.activity_subtype]
+
+                    except: 
+                        print(event.activity_subtype)
+                        continue
+            else:
+                continue
+
+            
+            if "Gather Point" in event.activity:
+                #add ocel_events
+                attribute_dict = {
+                        'Player': [event.player_id],
+                        'Villager': [],
+                        'Building': event.object_ids
+                        }
+                event_type = "Set Gather Point " + gather_target
+                gatherpoint_event = OCEL_event(event_type, event.timestamp, event.player_id, attributes_dict=attribute_dict)
+                OCEL_event_match.append(gatherpoint_event)
+                
+                #fill gatherpoint_dict for lookup
+                build_id = event.object_ids[0]
+
+                if build_id not in gatherpoint_dict:
+                    gatherpoint_dict[build_id] = []
+                bisect.insort(gatherpoint_dict[build_id], (event.timestamp, gather_target))
+
+            elif "Gather " in event.activity:
+                try:
+                    attribute_dict = {
+                            'Player': [event.player_id],
+                            'Villager': event.object_ids,
+                            'Building': []
+                            }
+                    event_type = "Gather " + gather_target
+                    gather_event = OCEL_event(event_type, event.timestamp, event.player_id, attributes_dict=attribute_dict)
+                    OCEL_event_match.append(gather_event)
+                except: print(event.get_dict())
+
+
+        def get_gather_point(build_id, creation_timestamp):
+            if build_id not in gatherpoint_dict or not gatherpoint_dict[build_id]:
+                return "None"
+            
+            gather_points = gatherpoint_dict[build_id]
+            pos = bisect.bisect_left(gather_points, (creation_timestamp, ''))
+            
+            if pos == 0:
+                return "None"
+            else:
+                return gather_points[pos - 1][1]
+        
+        #create Gather Events for all produced vills
+        for event in OCEL_event_match:
+            if event.ocel_type == "Complete Queue Villager":
+                try:
+                    time = event.ocel_time
+                    build_id = event.attributes['Building'][0]
+                    gather_target = get_gather_point(build_id, time)
+                    gather_event = OCEL_event("Gather " + gather_target, time, event.player, attributes_dict=event.attributes)
+                    OCEL_event_match.append(gather_event)
+                except:
+                    print("No GP")
+
+    
+
         #go over all events and overwrite the object lists in the attributes
         for event in OCEL_event_match:
             for key in event.attributes:
                 #ignore playerID
                 if key == 'Player':
                     continue
+
+                #clean duplicates
+                event.attributes[key] = list(set(event.attributes[key]))
 
                 for act_id in event.attributes[key]:
                     #check if numeric - then assume acting ID 
@@ -965,6 +1074,8 @@ def exportOCEL_fromRecordfile(match_ids:list, recordfile_path = './data/recordfi
 
             succ +=1
 
+            #print("Succ_id: ", match_id)
+
         except:
             fail +=1
             continue
@@ -1001,7 +1112,8 @@ def exportOCEL_fromRecordfile(match_ids:list, recordfile_path = './data/recordfi
         OCEL_obj_match.append(match_object)
 
         match_attributes = {
-            'maptype': 'Default',
+            'map': match_info['map'],
+            'duration': match_info['duration'],
             'player': [],
             'session': []
         }
@@ -1011,8 +1123,15 @@ def exportOCEL_fromRecordfile(match_ids:list, recordfile_path = './data/recordfi
             player_object = OCEL_object(f'P{p_id}',"Player", None)
             OCEL_obj_match.append(player_object)
             match_attributes['player'].append(player_object.ocel_id)
+
+            #check for winner
+            if p_id in match_info['winner_ids']:
+                session_attributes = {'win': 1}
+            else:
+                session_attributes = {'win': 0}
+                
             
-            session_object = OCEL_object(f'S{match_id}_{p_id}',"Session", None)
+            session_object = OCEL_object(f'S{match_id}_{p_id}',"Session", None,attributes=session_attributes)
             OCEL_obj_match.append(session_object)
             match_attributes['session'].append(session_object.ocel_id)
 
@@ -1088,13 +1207,33 @@ def exportOCEL_fromRecordfile(match_ids:list, recordfile_path = './data/recordfi
                 tables['event_object'].append({'ocel_event_id': event.event_id, 'ocel_object_id': obj, 'ocel_qualifier': ""})
         
         #fill object to object table
-        temp_obj_list = []
+        temp_obj_list = set()
         for attr in event.attributes:
             for obj in event.attributes[attr]:
-                temp_obj_list.append(obj)
+                temp_obj_list.add(obj)
+        temp_obj_list = list(temp_obj_list)
 
+
+            # Convert set to list and sort it with custom logic
+        def custom_sort_key(x):
+            if x.startswith('P'):
+                return (0, x)
+            elif x.startswith('S'):
+                return (2, x)
+            elif x.startswith('M'):
+                return (3, x)
+            else:
+                return (1, x)
+    
+        temp_obj_list = sorted(temp_obj_list, key=custom_sort_key)
+        
+        # Create all 2-combinations of the sorted object list
         obj_combinations = list(combinations(temp_obj_list, 2))
 
+        #define o2o qualifiers
+        o2o_relations = {}
+        
+    
         for comb in obj_combinations:
             tables['object_object'].append({'ocel_source_id': comb[0], 'ocel_target_id': comb[1], 'ocel_qualifier': ""})
 
@@ -1140,11 +1279,13 @@ def exportOCEL_fromRecordfile(match_ids:list, recordfile_path = './data/recordfi
     conn.close()
 
     #return metrics
-    #return(succ, fail)
+
     if succ < goal:
         print("Only ", succ, " matches exported sucessfully.")
 
     else:
         print("Export of ", succ, " matches completed.")
+
+    return (succ, fail,tables)
 
 
